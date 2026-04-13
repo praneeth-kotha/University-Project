@@ -1,61 +1,64 @@
 from flask import Flask, render_template, request, jsonify
-import pickle
 import pandas as pd
+import joblib
+import os
 
 app = Flask(__name__)
 
-# ================= ML MODELS =================
-model = pickle.load(open("model.pkl", "rb"))
-preprocessor = pickle.load(open("preprocessor.pkl", "rb"))
-label_encoder = pickle.load(open("label_encoder.pkl", "rb"))
+# LOAD MODEL
+model = None
+preprocessor = None
+label_encoder = None
 
-# ================= ROUTES =================
+try:
+    print("📁 Current directory:", os.getcwd())
+
+    model = joblib.load("model.pkl")
+    preprocessor = joblib.load("preprocessor.pkl")
+    label_encoder = joblib.load("label_encoder.pkl")
+
+    print("✅ Models loaded successfully")
+
+except Exception as e:
+    print("❌ Error loading models:", e)
+
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
-@app.route("/about")
-def about():
-    return render_template("about.html")
-
-@app.route("/cropprediction")
-def crop():
-    return render_template("cropprediction.html")
-
-@app.route("/analytics")
-def analytics():
-    return render_template("analytics.html")
-
-@app.route("/contact")
-def contact():
-    return render_template("contact.html")
-
-# ================= ML PREDICTION =================
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.json
+    try:
+        if model is None:
+            return jsonify({"error": "Model not loaded"}), 500
 
-    input_data = pd.DataFrame([{
-        "Temperature": data["temperature"],
-        "Humidity": data["humidity"],
-        "Rainfall": data["rainfall"],
-        "PH": data["ph"],
-        "Nitrogen": data["nitrogen"],
-        "Phosphorous": data["phosphorus"],
-        "Potassium": data["potassium"],
-        "Carbon": data["carbon"],
-        "Soil": data["soil"]
-    }])
+        data = request.get_json()
 
-    processed = preprocessor.transform(input_data)
-    prediction = model.predict(processed)
-    crop = label_encoder.inverse_transform(prediction)[0]
+        input_data = pd.DataFrame([{
+            "Temperature": float(data["temperature"]),
+            "Humidity": float(data["humidity"]),
+            "Rainfall": float(data["rainfall"]),
+            "PH": float(data["ph"]),
+            "Nitrogen": float(data["nitrogen"]),
+            "Phosphorous": float(data["phosphorus"]),
+            "Potassium": float(data["potassium"]),
+            "Carbon": float(data["carbon"]),
+            "Soil": str(data["soil"]).lower().strip()
+        }])
 
-    return jsonify({"crop": crop})
+        processed = preprocessor.transform(input_data)
+        prediction = model.predict(processed)
+        crop = label_encoder.inverse_transform(prediction)[0]
 
-# ================= RUN =================
+        return jsonify({"crop": crop})
+
+    except Exception as e:
+        print("❌ Prediction error:", e)
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
